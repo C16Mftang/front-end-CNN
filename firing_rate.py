@@ -4,6 +4,7 @@ import os
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
+from plotting import plot_pred_dots
 
 # current working directory
 if(os.getcwd()[-1] == '/'):
@@ -23,11 +24,14 @@ model_name = args.model_name
 num_dot_movies = args.num_dot_movies
 num_natural_movies = args.num_natural_movies
 
+FRAMES_PER_TRIAL = 240
+
 model = keras.models.load_model(MODEL_PATH+model_name)
 
 def create_dataset(paths, max_seq_len=4800, encoding='png', pool=None):
-    # again, you will change the features to reflect the variables in your own metadata
-    # you may also change the max_seq_len (which is the maximum duration for each trial in ms)
+    """
+    Read in .tfrecord datasets of the drifting dots movies
+    """
     feature_description = {
         'frames': tf.io.VarLenFeature(tf.string),
         'change_label': tf.io.VarLenFeature(tf.int64),
@@ -60,74 +64,13 @@ def create_dataset(paths, max_seq_len=4800, encoding='png', pool=None):
     data_set = data_set.map(_parse_example, num_parallel_calls=24)
     return data_set
 
-def plot_dot_response(all_movies):
-    # get intermediate output
-    intermediate_layer_model = keras.Model(inputs=model.input,
-                                           outputs=model.layers[12].output)
-    # responses given one movie (containing 10 trials and 10 grey screens)                                      
-    output = intermediate_layer_model(all_movies) # 20, 60, 16
-    example = np.reshape(output, (-1, 16)) # 1200, 16
-    # rec_res = tf.nn.relu(example).numpy()
-    rec_res = example
-
-    NUM_COLORS = rec_res.shape[1]
-    cm = plt.get_cmap('nipy_spectral')
-    cmap = [cm(1.*i/NUM_COLORS) for i in range(NUM_COLORS)]
-    fig = plt.figure(figsize=(12,12))
-    for i in range(rec_res.shape[1]):
-        ax = plt.subplot(rec_res.shape[1], 1, i+1)
-        ax.set_ylim([-1,1])
-        ax.plot(rec_res[:, i], alpha=1, c=cmap[i])
-    fig.text(0.5, 0.06, 'time', ha='center')
-    fig.text(0.06, 0.5, 'avg. firing rates over 4 frames', va='center', rotation='vertical')
-    plt.savefig(IMG_PATH+'responses_dots.png', dpi=200)
-
-    if False: # not-so-useful plots
-        plt.figure(figsize=(12, 1))
-        for i in range(rec_res.shape[1]):
-            plt.plot(rec_res[:, i], alpha=0.6)
-        plt.xlabel('time')
-        plt.savefig(IMG_PATH+'responses_all.png', dpi=200)
-
-def plot_natural_response(x):
-    # get intermediate output
-    intermediate_layer_model = keras.Model(inputs=model.input,
-                                           outputs=model.layers[12].output)                                 
-    output = intermediate_layer_model(x) # 10, 60, 16
-    output = np.reshape(output, (-1, 16)) # 600, 16
-    # res = np.zeros((2*output.shape[0], output.shape[1]))
-    # for i in range(0, 600, 60):
-    #     res[2*i:2*i+60] = output[i:i+60]
-    res = output
-
-    NUM_COLORS = res.shape[1]
-    cm = plt.get_cmap('nipy_spectral')
-    cmap = [cm(1.*i/NUM_COLORS) for i in range(NUM_COLORS)]
-    fig = plt.figure(figsize=(12,12))
-    for i in range(res.shape[1]):
-        ax = plt.subplot(res.shape[1], 1, i+1)
-        ax.set_ylim([-1,1])
-        ax.plot(res[:, i], alpha=1, c=cmap[i])
-    fig.text(0.5, 0.06, 'time', ha='center')
-    fig.text(0.06, 0.5, 'avg. firing rates over 4 frames', va='center', rotation='vertical')
-    plt.savefig(IMG_PATH+'responses_natural.png', dpi=200)
-
-def prediction(all_movies):
-    y_pred = model.predict(all_movies[::2])
-    print(y_pred[0].shape)
-    plt.figure()
-    plt.scatter(y_pred[0], y_pred[1], alpha=0.3)
-    plt.xlabel('x-coordinates')
-    plt.ylabel('y-coordinates')
-    plt.savefig(IMG_PATH+'/pred_dir', dpi=200)
-
 def read_dot(num_movies):
     """
     Select a random subset of drifting dots movies
 
     num_movies: number of 4800 frames-long drifting dots movies to select. Each contains 10 trials and 10 grey screens
     """
-    # each tfrecord file corresponds to only one movie
+    # each tfrecord file corresponds to only one movie (4800 frames)
     file_names = [os.path.expanduser(f'preprocessed/processed_data_{i+1}.tfrecord') for i in range(num_movies)]
     data_set = create_dataset(file_names, 4800).batch(1)
 
@@ -137,7 +80,7 @@ def read_dot(num_movies):
     movies = []
     true_dirs = []
     trial_cohs = []
-    for ex in data_set: # iterate through num_movies
+    for ex in data_set:
         trials = []
         print("Movie ", k)
         # the direction vector, of length max_seq_len, fixed for each trial/gray screen in the movie
@@ -146,7 +89,6 @@ def read_dot(num_movies):
         trial_coh = ex[1]['tf_trial_coh'].numpy()[0] # len = 10, coh vector of this movie
         true_dirs.append(dom_dir)
         trial_cohs.append(trial_coh)
-        # start and end frames of each trial movie and gray screen
         start_frames = np.arange(0, 80, 4)
         end_frames = np.arange(4, 84, 4)
         framerate = 60
@@ -167,6 +109,8 @@ def read_dot(num_movies):
 
 def read_natural(x_path, y_path, num_natural_movies):
     """
+    Read in natural motion movies 
+
     num_natural_movies: number of natural movies (length=240 frames) to select
     """
     x = np.load(x_path, mmap_mode='r+')
@@ -175,21 +119,107 @@ def read_natural(x_path, y_path, num_natural_movies):
     idx = np.random.randint(x.shape[0], size=num_natural_movies)
     return x[idx], y[idx]
 
+def plot_firing_rates(all_movies, stim='natural'):
+    """
+    Plot the 16 neurons' firing rates to drifting dots or natural movies, rectified
+
+    all_movies: input
+    stim: 'natural' or 'dots'
+    """
+    intermediate_layer_model = keras.Model(inputs=model.input,
+                                           outputs=model.layers[12].output)
+    # responses given one movie                    
+    output = intermediate_layer_model(all_movies) # 20, 60, 16
+    example = np.reshape(output, (-1, 16)) # 1200, 16
+    rec_res = tf.nn.relu(example).numpy()
+
+    NUM_COLORS = rec_res.shape[1]
+    cm = plt.get_cmap('nipy_spectral')
+    cmap = [cm(1.*i/NUM_COLORS) for i in range(NUM_COLORS)]
+    fig = plt.figure(figsize=(12,12))
+    for i in range(rec_res.shape[1]):
+        ax = plt.subplot(rec_res.shape[1], 1, i+1)
+        ax.set_ylim([0, 1])
+        ax.plot(rec_res[:, i], alpha=1, c=cmap[i])
+    fig.text(0.5, 0.06, 'time', ha='center')
+    fig.text(0.06, 0.5, 'avg. firing rates over 4 frames', va='center', rotation='vertical')
+    plt.savefig(IMG_PATH+'responses_'+stim, dpi=200)
+
+    if False: # plot all neurons in one frame
+        plt.figure(figsize=(12, 1))
+        for i in range(rec_res.shape[1]):
+            plt.plot(rec_res[:, i], alpha=0.6)
+        plt.xlabel('time')
+        plt.savefig(IMG_PATH+'responses_all.png', dpi=200)
+
+def plot_dot_predictions():
+    """
+    Plot true optic flow vs predicted optic flow by the model
+    """
+    plot_pred_dots(model)
+
+def spike_generation(all_movies):
+    """
+    Generate spikes based on firing rates
+
+    Output: (num_dot_movies*20, 240, 16), binary 
+    """
+    intermediate_layer_model = keras.Model(inputs=model.input,
+                                           outputs=model.layers[12].output)
+    # responses given one movie                    
+    output = intermediate_layer_model(all_movies) # 20*num_dot_movies, 60, 16
+    f_rates = tf.nn.relu(output).numpy()
+    num_neurons = f_rates.shape[2]
+
+    f_rates_r = np.repeat(f_rates, int(FRAMES_PER_TRIAL/f_rates.shape[1]), axis=1) # 20*num_dot_movies, 240, 16
+    
+    # random matrix between [0,1] for spike generation
+    random_matrix = np.random.rand(f_rates.shape[0], FRAMES_PER_TRIAL, num_neurons)
+    spikes = (f_rates_r - random_matrix > 0)*1
+    return spikes
+
+def raster_plot(all_movies):
+    """
+    Generate raster plot based on spike trains
+    """
+    spikes = spike_generation(all_movies)
+    example = np.reshape(spikes, (-1, 16)) # 4800, 16
+
+    plt.figure()
+    for i in range(example.shape[0]):
+        for j in range(example.shape[1]):
+            if example[i,j] == 1:
+                x1 = [i,i]
+                x2 = [j-0.25,j+0.25]
+                plt.plot(x1, x2, color='black', linewidth=0.2)
+    plt.xlabel('Time (frames)')
+    plt.ylabel('Neurons')
+    plt.savefig(IMG_PATH+'raster_plot.png', dpi=200)
+                
 def main(num_dot_movies, num_natural_movies):
+    """
+    Generate plot samples
+    
+    Difference between two inputs:
+
+    num_dot_movies: number of drifting dot movies, each containing 10 moving dots and 10 grey screens, total length = 4800 frames
+
+    num_natural_movies: number of natural movies, total length = 240 frames
+    """
     dot_movies, dot_directions, coherences = read_dot(num_dot_movies)
     natural_movies, natural_directions = read_natural('x_all.npy', 'y_all.npy', num_natural_movies)
 
-    # plot the intermediate responses before the final projection
-    plot_dot_response(dot_movies[0:20])
-    plot_natural_response(natural_movies)
+    plot_firing_rates(dot_movies[0:20], stim='dots') # plot using the first drifting dots movie
+    plot_firing_rates(natural_movies, stim='natural')
+    raster_plot(dot_movies[0:20])
 
-    print(dot_directions)
-    print(coherences)
-    angles = np.arctan2(natural_directions[:,1], natural_directions[:,0]) * 180 / np.pi
-    distance = np.sqrt(natural_directions[:,0]**2 + natural_directions[:,1]**2)
-    print(angles)
-    print(distance)
-
+    if False:
+        plot_dot_predictions()
+    if False:
+        angles = np.arctan2(natural_directions[:,1], natural_directions[:,0]) * 180 / np.pi
+        distance = np.sqrt(natural_directions[:,0]**2 + natural_directions[:,1]**2)
+        print(angles)
+        print(distance)
 
 if __name__ == '__main__':
     main(num_dot_movies, num_natural_movies)

@@ -157,3 +157,34 @@ def plot_model(model_name):
     cnn_model = keras.models.load_model(model_path)
     dot_img_file = 'model_diagram.png'
     tf.keras.utils.plot_model(cnn_model, to_file=dot_img_file, show_shapes=True, show_layer_names=True, dpi=200)
+
+def plot_pred_dots(model):
+    x = np.load('x_all_dot.npy')
+    y_true = np.load('y_all_dot.npy')
+    y_pred = model.predict(x)
+
+    plt.figure()
+    plt.scatter(y_true[:,0], y_true[:,1], alpha=0.3, label='true')
+    plt.scatter(y_pred[0], y_pred[1], alpha=0.3, label='pred')
+    plt.xlabel('x-coordinates')
+    plt.ylabel('y-coordinates')
+    plt.title('Pred vs true on train data')
+    plt.legend()
+    plt.savefig(IMG_PATH+'/res_plots/pred_v_computed_dots', dpi=200)
+
+    # visualise the x and y predictions separatelly
+    unity_x = np.linspace(-1,1,100)
+    unity_y = np.linspace(-1,1,100)
+    plt.figure(figsize=(12,4))
+    plt.subplot(121)
+    plt.plot(unity_x, unity_x, c='orange', label='identity')
+    plt.scatter(y_true[:,0], y_pred[0], alpha=0.3)
+    plt.xlabel("Computed x"); plt.ylabel("Pred x")
+    plt.legend()
+
+    plt.subplot(122)
+    plt.plot(unity_y, unity_y, c='orange', label='identity')
+    plt.scatter(y_true[:,1], y_pred[1], alpha=0.3)
+    plt.xlabel("Computed y"); plt.ylabel("Pred y")
+    plt.legend()
+    plt.savefig(IMG_PATH+'/res_plots/pred_v_computed_xy_dots', dpi=200)
