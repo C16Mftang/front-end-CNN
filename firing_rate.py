@@ -5,6 +5,7 @@ import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from plotting import plot_pred_dots
+import scipy.sparse
 
 # current working directory
 if(os.getcwd()[-1] == '/'):
@@ -15,10 +16,10 @@ else:
 MODEL_PATH = cwd + 'models/'
 IMG_PATH = cwd + 'plots/res_plots/'
 
-parser = argparse.ArgumentParser(description='Args for the firing rates')
-parser.add_argument('model_name', type=str, help='Name of the model, for better management')
+parser = argparse.ArgumentParser(description='Args for generating the spikes')
+parser.add_argument('model_name', type=str, help='Name of the model')
 parser.add_argument('num_dot_movies', type=int, help='Number of dot movies to check')
-parser.add_argument('num_natural_movies', type=int, help='Number of natural movies to check')
+parser.add_argument('--num_natural_movies', default=20, type=int, help='Number of natural movies to check')
 args = parser.parse_args()
 model_name = args.model_name
 num_dot_movies = args.num_dot_movies
@@ -67,7 +68,6 @@ def create_dataset(paths, max_seq_len=4800, encoding='png', pool=None):
 def read_dot(num_movies):
     """
     Select a random subset of drifting dots movies
-
     num_movies: number of 4800 frames-long drifting dots movies to select. Each contains 10 trials and 10 grey screens
     """
     # each tfrecord file corresponds to only one movie (4800 frames)
@@ -110,7 +110,6 @@ def read_dot(num_movies):
 def read_natural(x_path, y_path, num_natural_movies):
     """
     Read in natural motion movies 
-
     num_natural_movies: number of natural movies (length=240 frames) to select
     """
     x = np.load(x_path, mmap_mode='r+')
@@ -122,7 +121,6 @@ def read_natural(x_path, y_path, num_natural_movies):
 def plot_firing_rates(all_movies, stim='natural'):
     """
     Plot the 16 neurons' firing rates to drifting dots or natural movies, rectified
-
     all_movies: input
     stim: 'natural' or 'dots'
     """
@@ -161,7 +159,6 @@ def plot_dot_predictions():
 def spike_generation(all_movies):
     """
     Generate spikes based on firing rates
-
     Output: (num_dot_movies*20, 240, 16), binary 
     """
     intermediate_layer_model = keras.Model(inputs=model.input,
@@ -198,28 +195,28 @@ def raster_plot(all_movies):
                 
 def main(num_dot_movies, num_natural_movies):
     """
-    Generate plot samples
-    
     Difference between two inputs:
 
     num_dot_movies: number of drifting dot movies, each containing 10 moving dots and 10 grey screens, total length = 4800 frames
-
     num_natural_movies: number of natural movies, total length = 240 frames
+
+    The binary spike train matrix is saved as a scipy sparse matrix (.npz)
     """
     dot_movies, dot_directions, coherences = read_dot(num_dot_movies)
-    natural_movies, natural_directions = read_natural('x_all.npy', 'y_all.npy', num_natural_movies)
+    spikes = spike_generation(dot_movies) # 20*num_dot_movies, 240, 16
+    spikes_sparse = scipy.sparse.csc_matrix(spikes.reshape((-1, spikes.shape[2])))
 
-    plot_firing_rates(dot_movies[0:20], stim='dots') # plot using the first drifting dots movie
-    plot_firing_rates(natural_movies, stim='natural')
-    raster_plot(dot_movies[0:20])
+    scipy.sparse.save_npz('spike_train.npz', spikes_sparse)
+    
+    if False: # generate plots
+        plot_firing_rates(dot_movies[0:20], stim='dots') # plot using the first drifting dots movie
+        raster_plot(dot_movies[0:20])
 
-    if False:
+        natural_movies, natural_directions = read_natural('x_all.npy', 'y_all.npy', num_natural_movies)
+        plot_firing_rates(natural_movies, stim='natural')
         plot_dot_predictions()
-    if False:
         angles = np.arctan2(natural_directions[:,1], natural_directions[:,0]) * 180 / np.pi
         distance = np.sqrt(natural_directions[:,0]**2 + natural_directions[:,1]**2)
-        print(angles)
-        print(distance)
 
 if __name__ == '__main__':
     main(num_dot_movies, num_natural_movies)
