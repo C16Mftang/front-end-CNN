@@ -26,6 +26,8 @@ num_dot_movies = args.num_dot_movies
 num_natural_movies = args.num_natural_movies
 
 FRAMES_PER_TRIAL = 240
+FRAMERATE = 60
+MS_PER_TRIAL = (FRAMES_PER_TRIAL // FRAMERATE) * 1000
 
 model = keras.models.load_model(MODEL_PATH+model_name)
 
@@ -168,10 +170,10 @@ def spike_generation(all_movies):
     f_rates = tf.nn.relu(output).numpy()
     num_neurons = f_rates.shape[2]
 
-    f_rates_r = np.repeat(f_rates, int(FRAMES_PER_TRIAL/f_rates.shape[1]), axis=1) # 20*num_dot_movies, 240, 16
+    f_rates_r = np.repeat(f_rates, int(MS_PER_TRIAL/f_rates.shape[1])+1, axis=1) # 20*num_dot_movies, 4020, 16
     
     # random matrix between [0,1] for spike generation
-    random_matrix = np.random.rand(f_rates.shape[0], FRAMES_PER_TRIAL, num_neurons)
+    random_matrix = np.random.rand(f_rates_r.shape[0], f_rates_r.shape[1], num_neurons)
     spikes = (f_rates_r - random_matrix > 0)*1
     return spikes
 
@@ -203,7 +205,8 @@ def main(num_dot_movies, num_natural_movies):
     The binary spike train matrix is saved as a scipy sparse matrix (.npz)
     """
     dot_movies, dot_directions, coherences = read_dot(num_dot_movies)
-    spikes = spike_generation(dot_movies) # 20*num_dot_movies, 240, 16
+    spikes = spike_generation(dot_movies) # 20*num_dot_movies*4020, 16
+    print(spikes.shape)
     spikes_sparse = scipy.sparse.csc_matrix(spikes.reshape((-1, spikes.shape[2])))
 
     scipy.sparse.save_npz('spike_train.npz', spikes_sparse)
