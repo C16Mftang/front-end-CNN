@@ -15,6 +15,7 @@ else:
 
 MODEL_PATH = cwd + 'models/'
 IMG_PATH = cwd + 'plots/res_plots/'
+MOVIE_PATH = '/home/macleanlab/mufeng/tfrecord_data_processing/'
 
 parser = argparse.ArgumentParser(description='Args for generating the spikes')
 parser.add_argument('model_name', type=str, help='Name of the model')
@@ -41,7 +42,8 @@ def create_dataset(paths, max_seq_len=4800, encoding='png', pool=None):
         'coherence_label': tf.io.VarLenFeature(tf.int64),
         'direction_label': tf.io.VarLenFeature(tf.int64),
         'dominant_direction': tf.io.VarLenFeature(tf.int64),
-        'trial_coherence': tf.io.VarLenFeature(tf.int64)
+        'trial_coherence': tf.io.VarLenFeature(tf.int64),
+        'is_changes': tf.io.VarLenFeature(tf.int64),
     }
     data_set = tf.data.TFRecordDataset(paths)
 
@@ -56,12 +58,14 @@ def create_dataset(paths, max_seq_len=4800, encoding='png', pool=None):
         _direction_label = _x['direction_label'].values
         _dominant_direction = _x['dominant_direction'].values
         _trial_coherence = _x['trial_coherence'].values
+        _is_changes = _x['is_changes'].values
 
         return _frames, dict(tf_op_layer_coherence=_label, # 0 or 1, length 4800
                              tf_op_layer_change=_change_label, # 0 or 1, length 4800
                              tf_op_dir=_direction_label, # 1,2,3,4, length 4800
                              tf_dom_dir=_dominant_direction, # 1,2,3,4, length 10 (i.e. per trial/grey screen)
                              tf_trial_coh=_trial_coherence, # 0 or 1, length 10
+                             tf_is_changes=_is_changes,
                             )
 
     data_set = data_set.map(_parse_example, num_parallel_calls=24)
@@ -73,28 +77,32 @@ def read_dot(num_movies):
     num_movies: number of 4800 frames-long drifting dots movies to select. Each contains 10 trials and 10 grey screens
     """
     # each tfrecord file corresponds to only one movie (4800 frames)
-    file_names = [os.path.expanduser(f'preprocessed/processed_data_{i+1}.tfrecord') for i in range(num_movies)]
+    # file_names = [os.path.expanduser(f'preprocessed/processed_data_{i+1}.tfrecord') for i in range(num_movies)]
+    file_names = [MOVIE_PATH + f'preprocessed/processed_data_{i+1}.tfrecord' for i in range(num_movies)]
     data_set = create_dataset(file_names, 4800).batch(1)
 
     # ex[0] the frames (tensor), shape [1, 4800, 36, 64, 3]
     # ex[1] a dictionary, containing coh level, change label and direction
     k = 1
     movies = []
-    true_dirs = []
-    trial_cohs = []
+    trial_cohs = [] # original coherence level for each trial
+    coh_labels = [] # coherence level at each frame
+    is_changes = [] # whether coherence changes for each trial
     for ex in data_set:
         trials = []
         print("Movie ", k)
-        # the direction vector, of length max_seq_len, fixed for each trial/gray screen in the movie
-        dirs = ex[1]['tf_op_dir'].numpy()[0]
-        dom_dir = ex[1]['tf_dom_dir'].numpy()[0] # len = 10, direction vector of this movie
+
         trial_coh = ex[1]['tf_trial_coh'].numpy()[0] # len = 10, coh vector of this movie
-        true_dirs.append(dom_dir)
         trial_cohs.append(trial_coh)
+        coh_label = ex[1]['tf_op_layer_coherence'].numpy()[0]
+        coh_labels.append(coh_label)
+        is_change = ex[1]['tf_is_changes'].numpy()[0]
+        is_changes.append(is_change)
+
         start_frames = np.arange(0, 80, 4)
         end_frames = np.arange(4, 84, 4)
         framerate = 60
-        for i in range(2*len(dom_dir)): # 20
+        for i in range(2*len(trial_coh)): # 20
             trial = ex[0][:, start_frames[i]*framerate:end_frames[i]*framerate] # [1, 240, 36, 64, 3]
             trials.append(trial)
 
@@ -104,10 +112,11 @@ def read_dot(num_movies):
         k+=1
     
     all_movies = tf.concat(movies, axis=0) # [num_movies*20,240,36,64,3]
-    directions = np.concatenate(true_dirs, axis=0) # shape=(num_movies*10,), [1,2,3,4] -> [0,90,180,270]
-    coherences = np.concatenate(trial_cohs, axis=0) # shape=(num_movies*10,)
+    all_trial_cohs = np.stack(trial_cohs) # [num_movies, 10]
+    all_coh_labels = np.stack(coh_labels) # [num_movies, 4800]
+    all_is_changes = np.stack(is_changes) # [num_movies, 10]
 
-    return all_movies, directions, coherences
+    return all_movies, all_trial_cohs, all_coh_labels, all_is_changes
 
 def read_natural(x_path, y_path, num_natural_movies):
     """
@@ -204,12 +213,18 @@ def main(num_dot_movies, num_natural_movies):
 
     The binary spike train matrix is saved as a scipy sparse matrix (.npz)
     """
-    dot_movies, dot_directions, coherences = read_dot(num_dot_movies)
-    spikes = spike_generation(dot_movies) # 20*num_dot_movies*4020, 16
+    dot_movies, all_trial_cohs, all_coh_labels, all_is_changes = read_dot(num_dot_movies)
+    spikes = spike_generation(dot_movies)
     print(spikes.shape)
     spikes_sparse = scipy.sparse.csc_matrix(spikes.reshape((-1, spikes.shape[2])))
 
+    # spikes, [20*num_dot_movies*4020, 16]
     scipy.sparse.save_npz('spike_train.npz', spikes_sparse)
+    # frame-by-frame coherence of each movie, [num_dot_movies, 4800]
+    np.save('coherences.npy', all_coh_labels) 
+    # trial-by-trial coherence changes (0 or 1), [num_dot_movies, 10]
+    np.save('changes.npy', all_is_changes)
+
     
     if False: # generate plots
         plot_firing_rates(dot_movies[0:20], stim='dots') # plot using the first drifting dots movie
