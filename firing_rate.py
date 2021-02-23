@@ -179,7 +179,7 @@ def spike_generation(all_movies):
     f_rates = tf.nn.relu(output).numpy()
     num_neurons = f_rates.shape[2]
 
-    f_rates_r = np.repeat(f_rates, int(MS_PER_TRIAL/f_rates.shape[1])+1, axis=1) # 20*num_dot_movies, 4020, 16
+    f_rates_r = np.repeat(f_rates, int(MS_PER_TRIAL/f_rates.shape[1])+2, axis=1) # 20*num_dot_movies, 4080, 16
     
     # random matrix between [0,1] for spike generation
     random_matrix = np.random.rand(f_rates_r.shape[0], f_rates_r.shape[1], num_neurons)
@@ -214,16 +214,26 @@ def main(num_dot_movies, num_natural_movies):
     The binary spike train matrix is saved as a scipy sparse matrix (.npz)
     """
     dot_movies, all_trial_cohs, all_coh_labels, all_is_changes = read_dot(num_dot_movies)
+    # generate spikes
     spikes = spike_generation(dot_movies)
     print(spikes.shape)
     spikes_sparse = scipy.sparse.csc_matrix(spikes.reshape((-1, spikes.shape[2])))
 
-    # spikes, [20*num_dot_movies*4020, 16]
-    scipy.sparse.save_npz('spike_train.npz', spikes_sparse)
-    # frame-by-frame coherence of each movie, [num_dot_movies, 4800]
-    np.save('coherences.npy', all_coh_labels) 
+    # dilate the coherence vectors from frames to ms
+    # sanity check: 4800*17 = 20*4080 = 81600ms per movie
+    coh_labels_ms = np.repeat(all_coh_labels, int(MS_PER_TRIAL/FRAMES_PER_TRIAL)+1, axis=1)
+    print(coh_labels_ms.shape)
+    coh_labels_sparse = scipy.sparse.csc_matrix(coh_labels_ms)
+
+    save_path = 'CNN_outputs'
+    if not os.path.exists(save_path):
+        os.mkdir(save_path)
+    # spikes, [num_dot_movies*20*4080, 16]
+    scipy.sparse.save_npz(save_path+'/spike_train.npz', spikes_sparse)
+    # frame-by-frame coherence of each movie, [num_dot_movies, 4800*17], sparsified
+    scipy.sparse.save_npz(save_path+'/coherences.npz', coh_labels_sparse)
     # trial-by-trial coherence changes (0 or 1), [num_dot_movies, 10]
-    np.save('changes.npy', all_is_changes)
+    np.save(save_path+'/changes.npy', all_is_changes)
 
     
     if False: # generate plots
