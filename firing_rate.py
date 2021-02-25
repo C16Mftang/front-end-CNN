@@ -169,19 +169,29 @@ def plot_dot_predictions():
 
 def spike_generation(all_movies):
     """
+
     Generate spikes based on firing rates
-    Output: (num_dot_movies*20, 240, 16), binary 
+        Input: (num_dot_movies*20, 240, 36, 64, 3)
+        Output: (num_dot_movies*20, 4080, 16), binary 
+
     """
     intermediate_layer_model = keras.Model(inputs=model.input,
                                            outputs=model.layers[12].output)
-    # responses given one movie                    
-    output = intermediate_layer_model(all_movies) # 20*num_dot_movies, 60, 16
-    f_rates = tf.nn.relu(output).numpy()
+    # responses given one movie
+    # load the data into the model in batches
+    batch_size = 2
+    dataset = tf.data.Dataset.from_tensor_slices(all_movies).batch(batch_size)
+    batch_rates = []
+    for d in dataset: 
+        output = intermediate_layer_model(d) # batch_size, 60, 16
+        batch_rate = tf.nn.relu(output).numpy() # batch_size, 60, 16
+        batch_rates.append(batch_rate)
+    f_rates = np.concatenate(batch_rates, axis=0) # num_dot_moviesx20, 60, 16
     num_neurons = f_rates.shape[2]
 
     f_rates_r = np.repeat(f_rates, int(MS_PER_TRIAL/f_rates.shape[1])+2, axis=1) # 20*num_dot_movies, 4080, 16
     
-    # random matrix between [0,1] for spike generation
+    # random matrix between [0,1] for Poisson process
     random_matrix = np.random.rand(f_rates_r.shape[0], f_rates_r.shape[1], num_neurons)
     spikes = (f_rates_r - random_matrix > 0)*1
     return spikes
@@ -213,16 +223,18 @@ def main(num_dot_movies, num_natural_movies):
 
     The binary spike train matrix is saved as a scipy sparse matrix (.npz)
     """
+    print("Reading movies...")
     dot_movies, all_trial_cohs, all_coh_labels, all_is_changes = read_dot(num_dot_movies)
     # generate spikes
     spikes = spike_generation(dot_movies)
-    print(spikes.shape)
+    print("Shape of spike train: ", spikes.shape)
+    print(f"Reshaping the spike train to a matrix with shape ({spikes.shape[0]}x{spikes.shape[1]}, {spikes.shape[2]})...")
     spikes_sparse = scipy.sparse.csc_matrix(spikes.reshape((-1, spikes.shape[2])))
 
     # dilate the coherence vectors from frames to ms
     # sanity check: 4800*17 = 20*4080 = 81600ms per movie
     coh_labels_ms = np.repeat(all_coh_labels, int(MS_PER_TRIAL/FRAMES_PER_TRIAL)+1, axis=1)
-    print(coh_labels_ms.shape)
+    print("Shape of ms-by-ms coherence levels: ", coh_labels_ms.shape)
     coh_labels_sparse = scipy.sparse.csc_matrix(coh_labels_ms)
 
     save_path = 'CNN_outputs'
