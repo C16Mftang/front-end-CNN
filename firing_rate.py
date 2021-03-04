@@ -76,7 +76,7 @@ def read_dot(num_movies):
     Select a random subset of drifting dots movies
     num_movies: number of 4800 frames-long drifting dots movies to select. Each contains 10 trials and 10 grey screens
     """
-    # each tfrecord file corresponds to only one movie (4800 frames)
+    # each tfrecord file corresponds to one movie (4800 frames)
     # file_names = [os.path.expanduser(f'preprocessed/processed_data_{i+1}.tfrecord') for i in range(num_movies)]
     file_names = [MOVIE_PATH + f'preprocessed/processed_data_{i+1}.tfrecord' for i in range(num_movies)]
     data_set = create_dataset(file_names, 4800).batch(1)
@@ -94,7 +94,7 @@ def read_dot(num_movies):
 
         trial_coh = ex[1]['tf_trial_coh'].numpy()[0] # len = 10, coh vector of this movie
         trial_cohs.append(trial_coh)
-        coh_label = ex[1]['tf_op_layer_coherence'].numpy()[0]
+        coh_label = ex[1]['tf_op_layer_coherence'].numpy()[0] # len = 4800, for each frame.
         coh_labels.append(coh_label)
         is_change = ex[1]['tf_is_changes'].numpy()[0]
         is_changes.append(is_change)
@@ -138,8 +138,20 @@ def plot_firing_rates(all_movies, stim='natural'):
     intermediate_layer_model = keras.Model(inputs=model.input,
                                            outputs=model.layers[12].output)
     # responses given one movie                    
-    output = intermediate_layer_model(all_movies) # 20, 60, 16
-    example = np.reshape(output, (-1, 16)) # 1200, 16
+    batch_size = 2
+    dataset = tf.data.Dataset.from_tensor_slices(all_movies).batch(batch_size)
+    batch_rates = []
+    for d in dataset: 
+        output = intermediate_layer_model(d) # batch_size, 60, 16
+        batch_rate = tf.nn.relu(output).numpy() # batch_size, 60, 16
+        batch_rates.append(batch_rate)
+    f_rates = np.concatenate(batch_rates, axis=0) # 20, 60, 16
+    f_rates = f_rates[::2] # 10, 60, 16
+    print("(num movies, compressed seq len, num cells): ", f_rates.shape)
+    num_neurons = f_rates.shape[2]
+
+    example = np.reshape(f_rates, (-1, num_neurons)) # 600, 16
+    # excluding grey screens
     rec_res = tf.nn.relu(example).numpy()
 
     NUM_COLORS = rec_res.shape[1]
@@ -152,7 +164,7 @@ def plot_firing_rates(all_movies, stim='natural'):
         ax.plot(rec_res[:, i], alpha=1, c=cmap[i])
     fig.text(0.5, 0.06, 'time', ha='center')
     fig.text(0.06, 0.5, 'avg. firing rates over 4 frames', va='center', rotation='vertical')
-    plt.savefig(IMG_PATH+'responses_'+stim, dpi=200)
+    plt.savefig(IMG_PATH+f'responses_{stim}_trial_only', dpi=200)
 
     if False: # plot all neurons in one frame
         plt.figure(figsize=(12, 1))
@@ -172,7 +184,7 @@ def spike_generation(all_movies):
 
     Generate spikes based on firing rates
         Input: (num_dot_movies*20, 240, 36, 64, 3)
-        Output: (num_dot_movies*20, 4080, 16), binary 
+        Output: (num_dot_movies*10, 4080, 16), binary 
 
     """
     intermediate_layer_model = keras.Model(inputs=model.input,
@@ -186,14 +198,15 @@ def spike_generation(all_movies):
         output = intermediate_layer_model(d) # batch_size, 60, 16
         batch_rate = tf.nn.relu(output).numpy() # batch_size, 60, 16
         batch_rates.append(batch_rate)
-    f_rates = np.concatenate(batch_rates, axis=0) # num_dot_moviesx20, 60, 16
+    f_rates = np.concatenate(batch_rates, axis=0) # 20*num_dot_movies, 60, 16
+    f_rates = f_rates[::2] # 10*num_dot_movies, 60, 16
     num_neurons = f_rates.shape[2]
 
-    f_rates_r = np.repeat(f_rates, int(MS_PER_TRIAL/f_rates.shape[1])+2, axis=1) # 20*num_dot_movies, 4080, 16
+    f_rates_r = np.repeat(f_rates, int(MS_PER_TRIAL/f_rates.shape[1])+2, axis=1) # 10*num_dot_movies, 4080, 16
     
     # random matrix between [0,1] for Poisson process
     random_matrix = np.random.rand(f_rates_r.shape[0], f_rates_r.shape[1], num_neurons)
-    spikes = (f_rates_r - random_matrix > 0)*1
+    spikes = (f_rates_r - random_matrix > 0)*1.
     return spikes
 
 def raster_plot(all_movies):
@@ -225,38 +238,44 @@ def main(num_dot_movies, num_natural_movies):
     """
     print("Reading movies...")
     dot_movies, all_trial_cohs, all_coh_labels, all_is_changes = read_dot(num_dot_movies)
-    # generate spikes
-    spikes = spike_generation(dot_movies)
-    print("Shape of spike train: ", spikes.shape)
-    print(f"Reshaping the spike train to a matrix with shape ({spikes.shape[0]}x{spikes.shape[1]}, {spikes.shape[2]})...")
-    spikes_sparse = scipy.sparse.csc_matrix(spikes.reshape((-1, spikes.shape[2])))
+    trial_coh_labels = all_coh_labels.reshape((-1, 20, FRAMES_PER_TRIAL))[:, ::2] # num_dot_movies, 10, 240
+    trial_coh_labels = trial_coh_labels.reshape((-1, 10*FRAMES_PER_TRIAL)) # num_dot_movies, 2400
 
-    # dilate the coherence vectors from frames to ms
-    # sanity check: 4800*17 = 20*4080 = 81600ms per movie
-    coh_labels_ms = np.repeat(all_coh_labels, int(MS_PER_TRIAL/FRAMES_PER_TRIAL)+1, axis=1)
-    print("Shape of ms-by-ms coherence levels: ", coh_labels_ms.shape)
-    coh_labels_sparse = scipy.sparse.csc_matrix(coh_labels_ms)
+    if True: # generate spikes
+        spikes = spike_generation(dot_movies)
+        print("Shape of spike train: ", spikes.shape)
+        print(f"Reshaping the spike train to a matrix with shape ({spikes.shape[0]}x{spikes.shape[1]}, {spikes.shape[2]})...")
+        spikes_sparse = scipy.sparse.csc_matrix(spikes.reshape((-1, spikes.shape[2])))
 
-    save_path = 'CNN_outputs'
-    if not os.path.exists(save_path):
-        os.mkdir(save_path)
-    # spikes, [num_dot_movies*20*4080, 16]
-    scipy.sparse.save_npz(save_path+'/spike_train.npz', spikes_sparse)
-    # frame-by-frame coherence of each movie, [num_dot_movies, 4800*17], sparsified
-    scipy.sparse.save_npz(save_path+'/coherences.npz', coh_labels_sparse)
-    # trial-by-trial coherence changes (0 or 1), [num_dot_movies, 10]
-    np.save(save_path+'/changes.npy', all_is_changes)
+        # dilate the coherence vectors from frames to ms
+        # sanity check: 2400*17 = 10*4080 = 40800ms per movie
+        coh_labels_ms = np.repeat(trial_coh_labels, int(MS_PER_TRIAL/FRAMES_PER_TRIAL)+1, axis=1) 
+        print("Shape of ms-by-ms coherence levels: ", coh_labels_ms.shape)
+        coh_labels_sparse = scipy.sparse.csc_matrix(coh_labels_ms) # num_dot_movies, 40800
+
+        save_path = 'CNN_outputs'
+        if not os.path.exists(save_path):
+            os.mkdir(save_path)
+
+        # spikes, [num_dot_movies*10*4080, 16]
+        scipy.sparse.save_npz(save_path+'/spike_train.npz', spikes_sparse)
+
+        # frame-by-frame coherence of each movie, [num_dot_movies, 40800], sparsified
+        scipy.sparse.save_npz(save_path+'/coherences.npz', coh_labels_sparse)
+
+        # trial-by-trial coherence changes (0 or 1), [num_dot_movies, 10]
+        np.save(save_path+'/changes.npy', all_is_changes)
 
     
     if False: # generate plots
         plot_firing_rates(dot_movies[0:20], stim='dots') # plot using the first drifting dots movie
-        raster_plot(dot_movies[0:20])
+        # raster_plot(dot_movies[0:20])
 
-        natural_movies, natural_directions = read_natural('x_all.npy', 'y_all.npy', num_natural_movies)
-        plot_firing_rates(natural_movies, stim='natural')
-        plot_dot_predictions()
-        angles = np.arctan2(natural_directions[:,1], natural_directions[:,0]) * 180 / np.pi
-        distance = np.sqrt(natural_directions[:,0]**2 + natural_directions[:,1]**2)
+        # natural_movies, natural_directions = read_natural('x_all.npy', 'y_all.npy', num_natural_movies)
+        # plot_firing_rates(natural_movies, stim='natural')
+        # plot_dot_predictions()
+        # angles = np.arctan2(natural_directions[:,1], natural_directions[:,0]) * 180 / np.pi
+        # distance = np.sqrt(natural_directions[:,0]**2 + natural_directions[:,1]**2)
 
 if __name__ == '__main__':
     main(num_dot_movies, num_natural_movies)
