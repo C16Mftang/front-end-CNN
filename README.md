@@ -1,5 +1,5 @@
-## Front-end CNN
-This is the front-end preprocesisng CNN for the trained SNN.
+# Front-end CNN
+A CNN model for modelling the processings in retina and thalamus. Given input movies, it outputs spike trains that can be used as inputs to certain downstream tasks. 
 
 ## How to generate spikes
 ### Input
@@ -14,7 +14,7 @@ conda activate tf2gpu
 Then run the command 
 
 ```bash
-CUDA_VISIBLE_DEVICES=1 python firing_rate.py 'ch_model4' 60
+CUDA_VISIBLE_DEVICES=1 python firing_rate.py 'ch_model4' 50
 ```
 
 where `'ch_model4'` is the pre-trained CNN model, and `50` here means the number of dot coh change movies. `'ch_model4'` is the model trained with natural movies only, and there will soon be another model that is trained with a mixture of natural and artificial stimuli. The maximum number of dot coh change movies is 60. 
