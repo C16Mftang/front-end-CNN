@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser(description='Args for the CNN model')
 parser.add_argument('model_name', type=str, help='Name of the model, for better management')
 parser.add_argument('epoch_num', type=int, help='Number of training epochs')
 parser.add_argument('learning_rate', type=float, help='Learning rate of the model')
-parser.add_argument('data', type=str, help='Use small data or large data')
+parser.add_argument('data_mode', type=str, help='Use natural data or mixture of natural and dots')
 args = parser.parse_args()
 # model name as command line input
 model_name = args.model_name
@@ -26,8 +26,6 @@ model_name = args.model_name
 epoch_num = args.epoch_num
 # learning rate as input
 lr = args.learning_rate
-# small or large data
-data_size = args.data
 
 # current working directory
 if(os.getcwd()[-1] == '/'):
@@ -39,11 +37,24 @@ IMG_PATH = cwd + 'plots'
 MODEL_PATH = cwd + 'models/'
 
 
-def load_data(x_path, y_path):
-    x = np.load(x_path, mmap_mode='r+')
-    y = np.load(y_path, mmap_mode='r+')
-    # x = np.load(x_path)
-    # y = np.load(y_path)
+def load_data(natural_path, dot_path, mode='mixed'):
+    if mode == 'natural':
+        natural_data = np.load(natural_path, mmap_mode='r+')
+        x = natural_data['x']
+        y = natural_data['y']
+    elif mode == 'mixed':
+        # replace part of 400 natural data with dot data
+        natural_data = np.load(natural_path, mmap_mode='r+')
+        dot_data = np.load(dot_path, mmap_mode='r+')
+        natural_x, natural_y = natural_data['x'], natural_data['y']
+        dot_x, dot_y = dot_data['x'], dot_data['y']
+        x = np.concatenate((natural_x, dot_x))
+        y = np.concatenate((natural_y, dot_y))
+
+    x = x.astype('uint8')
+    p = np.random.permutation(x.shape[0])
+    x = x[p]
+    y = y[p]
     print(x.dtype, y.dtype)
     x_train, x_val, y_train, y_val = train_test_split(x, y, test_size=0.2, random_state=42)
 
@@ -89,11 +100,7 @@ def train_model(drop_ps, lr, x_train, y_train, x_val, y_val, epochs, batch_size)
     return model, history
 
 def main():
-    # train the model and save the results
-    if data_size == 'small':
-        train, val = load_data(DATA_PATH+'x_small.npy', DATA_PATH+'y_small.npy')
-    else:
-        train, val = load_data(DATA_PATH+'x_all.npy', DATA_PATH+'y_all.npy')
+    train, val = load_data(DATA_PATH+'natural_data.npz', DATA_PATH+'dot_data.npz', mode=args.data_mode)
 
     x_train, y_train = train[0], train[1]
     x_val, y_val = val[0], val[1]
@@ -112,9 +119,10 @@ def main():
     plot_loss(history, epochs, model_name)
     plot_scatter(model, x_train, y_train, x_val, y_val, model_name)
 
-    # # save the predictions
-    # y_pred_train = model.predict(x_train)
-    # np.save('y_pred_all.npy', y_pred_train)
+    if False:
+        # save the predictions
+        y_pred_train = model.predict(x_train)
+        np.save('y_pred_all.npy', y_pred_train)
 
     # save the model
     model.save(MODEL_PATH+model_name)

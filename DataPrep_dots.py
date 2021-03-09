@@ -283,7 +283,7 @@ def movie_clip_to_arr(movies_directory, movie_name, first_index, height, length,
 def regression_dataset(movies_directory, parameters_file, height, length, clip_length):
     df = pd.read_csv(parameters_file)
     num_movies = len(df['Movie Name'])
-    x = np.zeros((num_movies, clip_length,height,length,3), dtype='float32')
+    x = np.zeros((num_movies, clip_length,height,length,3), dtype='uint8')
     y = np.zeros((num_movies, 2))
 
     for i in range(num_movies):
@@ -303,7 +303,7 @@ def regression_dataset(movies_directory, parameters_file, height, length, clip_l
 def categorical_dataset(movies_directory, parameters_file, height, length,clip_length):
     df = pd.read_csv(parameters_file)
     num_movies = len(df['Movie Name'])
-    x = np.zeros((num_movies, clip_length,height,length,3), dtype='float32')
+    x = np.zeros((num_movies, clip_length,height,length,3), dtype='uint8')
     y = np.zeros(num_movies)
 
     for i in range(num_movies):
@@ -359,8 +359,10 @@ else:
 # #Use this if you want to try testing only for direction
 # #x,y = categorical_dataset(frames_directory, flows_csv, 36, 64, 240)
 
-x,y = regression_dataset(frames_directory, flows_csv, 36, 64, 240)
+x, y = regression_dataset(frames_directory, flows_csv, 36, 64, 240)
 print(y.shape)
 # x_train, x_val, y_train, y_val = train_test_split(x,y, test_size=0.25, random_state=42)
-np.save('x_all_dot', x)
-np.save('y_all_dot', y)
+# np.save('x_all_dot', x)
+# np.save('y_all_dot', y)
+
+np.savez_compressed('dot_data', x=x, y=y)
