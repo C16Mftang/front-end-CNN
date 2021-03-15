@@ -17,9 +17,9 @@ Then run the command
 CUDA_VISIBLE_DEVICES=1 python firing_rate.py 'ch_model4' 50
 ```
 
-where `'ch_model4'` is the pre-trained CNN model, and `50` here means the number of dot coh change movies. `'ch_model4'` is the model trained with natural movies only, and there will soon be another model that is trained with a mixture of natural and artificial stimuli. The maximum number of dot coh change movies is 60. 
+where `'ch_model4'` is the pre-trained CNN model, and `50` here means the number of dot coh change movies. `'ch_model4'` is the model trained with natural movies only, and you can also specify `'ch_model6'`, which is the model pre-trained by the mixture of natural and dot movies. The maximum number of dot coh change movies is 60. 
 
-There is a thrid optional argument for running this command, which is the number of natural movies you want to investigate. This is not needed for the purpose of generating spikes given artificial movies.
+There is a thrid optional argument for running this command, which is the number of natural movies you want to investigate. This is for exploration purpose only, and is not needed for the purpose of generating spikes given dot movies.
 
 ### Ouput
 By running the script, a folder `CNN_outputs` will be created in your working directory, which contains 3 files:

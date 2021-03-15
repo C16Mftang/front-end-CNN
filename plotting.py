@@ -159,8 +159,9 @@ def plot_model(model_name):
     tf.keras.utils.plot_model(cnn_model, to_file=dot_img_file, show_shapes=True, show_layer_names=True, dpi=200)
 
 def plot_pred_dots(model):
-    x = np.load('x_all_dot.npy')
-    y_true = np.load('y_all_dot.npy')
+    data = np.load('dot_data.npz')
+    x = data['x']
+    y_true = data['y']
     y_pred = model.predict(x)
 
     plt.figure()
