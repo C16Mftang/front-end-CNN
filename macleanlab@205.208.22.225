@@ -168,7 +168,7 @@ def plot_firing_rates(all_movies, makepositive, plot_grey=True, stim='natural'):
     fig = plt.figure(figsize=(12,12))
     for i in range(rec_res.shape[1]):
         ax = plt.subplot(rec_res.shape[1], 1, i+1)
-        ax.set_ylim([0, 1])
+        ax.set_ylim([-1, 1])
         ax.plot(rec_res[:, i], alpha=1, c=cmap[i])
     fig.text(0.5, 0.06, 'time', ha='center')
     fig.text(0.06, 0.5, 'avg. firing rates over 4 frames', va='center', rotation='vertical')
@@ -257,7 +257,6 @@ def main(num_dot_movies, num_natural_movies):
     # natural_movies, natural_y = read_natural(num_natural_movies)
 
     if True: # generate spikes
-        print(f'Generating spikes using {makepositive}')
         spikes = spike_generation(dot_movies, makepositive)
         print("Shape of spike train: ", spikes.shape)
         print(f"Reshaping the spike train to a matrix with shape ({spikes.shape[0]}x{spikes.shape[1]}, {spikes.shape[2]})...")
@@ -282,7 +281,7 @@ def main(num_dot_movies, num_natural_movies):
         # trial-by-trial coherence changes (0 or 1), [num_dot_movies, 10]
         np.save(save_path+f'/changes_{model_name}_{makepositive}.npy', all_is_changes)
 
-        plot_firing_rates(dot_movies[0:20], makepositive=makepositive, plot_grey=True, stim='dot') 
+        plot_firing_rates(natural_movies, makepositive=makepositive, plot_grey=True, stim='natural') 
 
     
     if False: # generate plots
