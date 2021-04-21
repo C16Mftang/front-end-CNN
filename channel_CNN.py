@@ -106,7 +106,7 @@ def main():
     x_val, y_val = val[0], val[1]
 
     # hyperparameters
-    drop_ps = [0, 0, 0, 0, 0]
+    drop_ps = [0.2, 0.2, 0.2, 0, 0]
     epochs = epoch_num
     batch_size = 20
     print('Training {} for {} epochs'.format(model_name, epoch_num))

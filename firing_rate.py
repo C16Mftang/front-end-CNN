@@ -20,17 +20,17 @@ MOVIE_PATH = '/home/macleanlab/mufeng/tfrecord_data_processing/'
 parser = argparse.ArgumentParser(description='Args for generating the spikes')
 parser.add_argument('model_name', type=str, help='Name of the model')
 parser.add_argument('num_dot_movies', type=int, help='Number of dot movies to check')
+parser.add_argument('make_positive', type=str, help='How do you want to make firing rates positive, rec or abs')
 parser.add_argument('--num_natural_movies', default=20, type=int, help='Number of natural movies to check')
 args = parser.parse_args()
 model_name = args.model_name
 num_dot_movies = args.num_dot_movies
 num_natural_movies = args.num_natural_movies
+makepositive = args.make_positive
 
 FRAMES_PER_TRIAL = 240
 FRAMERATE = 60
 MS_PER_TRIAL = (FRAMES_PER_TRIAL // FRAMERATE) * 1000
-
-makepositive = 'abs' # abs or rec
 
 model = keras.models.load_model(MODEL_PATH+model_name)
 
@@ -215,6 +215,7 @@ def spike_generation(all_movies, makepositive):
     f_rates_r = np.repeat(f_rates, int(MS_PER_TRIAL/f_rates.shape[1])+2, axis=1) # 10*num_dot_movies, 4080, 16
     
     # random matrix between [0,1] for Poisson process
+    # this step is stochastic, may need to introduce a seed
     random_matrix = np.random.rand(f_rates_r.shape[0], f_rates_r.shape[1], num_neurons)
     spikes = (f_rates_r - random_matrix > 0)*1.
     return spikes
@@ -272,15 +273,20 @@ def main(num_dot_movies, num_natural_movies):
         save_path = 'CNN_outputs'
         if not os.path.exists(save_path):
             os.mkdir(save_path)
+        
+        if model_name == 'ch_model4':
+            training_mode = 'natural'
+        elif model_name == 'ch_model6':
+            training_mode = 'mixed'
 
         # spikes, [num_dot_movies*10*4080, 16]
-        scipy.sparse.save_npz(save_path+f'/spike_train_{model_name}_{makepositive}.npz', spikes_sparse)
+        scipy.sparse.save_npz(save_path+f'/spike_train_{training_mode}_{makepositive}.npz', spikes_sparse)
 
         # frame-by-frame coherence of each movie, [num_dot_movies, 40800], sparsified
-        scipy.sparse.save_npz(save_path+f'/coherences_{model_name}_{makepositive}.npz', coh_labels_sparse)
+        scipy.sparse.save_npz(save_path+f'/coherences_{training_mode}_{makepositive}.npz', coh_labels_sparse)
 
         # trial-by-trial coherence changes (0 or 1), [num_dot_movies, 10]
-        np.save(save_path+f'/changes_{model_name}_{makepositive}.npy', all_is_changes)
+        np.save(save_path+f'/changes_{training_mode}_{makepositive}.npy', all_is_changes)
 
         plot_firing_rates(dot_movies[0:20], makepositive=makepositive, plot_grey=True, stim='dot') 
 
