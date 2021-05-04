@@ -222,23 +222,17 @@ def spike_generation(all_movies, makepositive):
 
 def raster_plot(all_movies):
     """
-    Generate raster plot based on spike trains
-
-    TODO: Use Chad's code for this!
+    Generate raster plot of one trial
     """
-    spikes = spike_generation(all_movies, makepositive)
-    example = np.reshape(spikes, (-1, 16)) # 4800, 16
+    spikes = spike_generation(all_movies, makepositive)[0]
+    example = np.reshape(spikes, (-1, 16)) # 4080, 16
 
-    plt.figure()
-    for i in range(example.shape[0]):
-        for j in range(example.shape[1]):
-            if example[i,j] == 1:
-                x1 = [i,i]
-                x2 = [j-0.25,j+0.25]
-                plt.plot(x1, x2, color='black', linewidth=0.2)
+    plt.figure(figsize=(6,3))
+    plt.pcolormesh(example.T, cmap='cividis')
+    plt.title(f'{makepositive} natural')
     plt.xlabel('Time (frames)')
     plt.ylabel('Neurons')
-    plt.savefig(IMG_PATH+'raster_plot.png', dpi=200)
+    plt.savefig(IMG_PATH+f'raster_plot_{makepositive}.png', dpi=200)
                 
 def main(num_dot_movies, num_natural_movies):
     """
@@ -293,15 +287,15 @@ def main(num_dot_movies, num_natural_movies):
     
     if False: # generate plots
         # plot using the first drifting dots movie
-        plot_firing_rates(natural_movies, rectify=False, plot_grey=True, stim='natural') 
+        # plot_firing_rates(natural_movies, rectify=False, plot_grey=True, stim='natural') 
 
         # plot using the first drifting dots movie
         # plot_firing_rates(dot_movies[0:20], rectify=False, plot_grey=True, stim='dot') 
-        # raster_plot(dot_movies[0:20])
+        raster_plot(dot_movies[0:20])
 
         # natural_movies, natural_directions = read_natural('x_all.npy', 'y_all.npy', num_natural_movies)
         # plot_firing_rates(natural_movies, stim='natural')
-        plot_dot_predictions()
+        # plot_dot_predictions()
         # angles = np.arctan2(natural_directions[:,1], natural_directions[:,0]) * 180 / np.pi
         # distance = np.sqrt(natural_directions[:,0]**2 + natural_directions[:,1]**2)
 
